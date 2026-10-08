@@ -1,13 +1,4 @@
-"""
-Módulo do Banco de Controle da Execução Agendada.
-Guarda, por sistema, o último arquivo de origem processado com sucesso
-(tamanho e data de modificação) e o histórico de cada execução. Usa SQLite
-(biblioteca padrão) em vez de um schema novo no Oracle: não depende de
-privilégio de criação de usuário/schema no banco de destino, e continua
-disponível mesmo se o Oracle estiver fora do ar na hora de só consultar o
-estado. Fica separado de qualquer schema recarregado pela automação, então
-o histórico nunca é apagado por um import com table_exists_action=replace.
-"""
+"""Estado e histórico das execuções agendadas (SQLite)."""
 
 import os
 import sqlite3
@@ -86,13 +77,9 @@ class ControlDB:
         status: str,
         mensagem: str,
     ):
-        """
-        Registra uma execução em pipeline_execucoes e, se status == "sucesso",
-        atualiza pipeline_estado - tudo na mesma transação, para o log e o
-        estado nunca ficarem dessincronizados (ex: processo morrer entre os dois
-        inserts). O estado só avança em caso de sucesso, de propósito: uma falha
-        não "esquece" a mudança pendente, então a base é tentada de novo na
-        próxima rodada com os mesmos dados de origem.
+        """Registra a execução e, em caso de sucesso, avança o estado da base na mesma transação.
+
+        Uma falha não avança o estado: a base é tentada de novo na próxima rodada.
         """
         if status not in ("sucesso", "erro"):
             raise ValueError(f"status inválido: {status!r} (esperado 'sucesso' ou 'erro')")
@@ -102,7 +89,7 @@ class ControlDB:
         fim_str = fim.isoformat()
 
         with closing(self._connect()) as conn:
-            with conn:  # commit/rollback automático ao sair do bloco
+            with conn:
                 conn.execute(
                     "INSERT INTO pipeline_execucoes "
                     "(base, arquivo, tamanho_origem, mtime_origem, inicio, fim, status, mensagem) "

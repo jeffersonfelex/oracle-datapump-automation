@@ -1,8 +1,4 @@
-"""
-Módulo de Interface de Linha de Comando (CLI).
-Concentra o menu interativo (execução sem parâmetros) e o parser de argumentos,
-mantendo o main.py apenas como ponto de entrada que orquestra a chamada.
-"""
+"""Menu interativo e argumentos de linha de comando."""
 
 import os
 import sys
@@ -10,11 +6,7 @@ import argparse
 
 
 def _run_interactive_menu():
-    """
-    Exibe o menu interativo (usado em duplo clique / 'py main.py' sem parâmetros)
-    e monta os argumentos equivalentes diretamente em sys.argv, para que o
-    argparse abaixo processe normalmente.
-    """
+    """Mostra o menu e preenche sys.argv com os argumentos equivalentes."""
     print("\n" + "=" * 70)
     print("  ATUALIZAÇÃO DAS BASES ORACLE - SISTEMAS CORPORATIVOS")
     print("=" * 70)
@@ -60,14 +52,7 @@ def _run_interactive_menu():
 
 
 def _maybe_add_teste_flag():
-    """
-    Pergunta se a execução (real, não dry-run) deve rodar em MODO TESTE: os arquivos
-    .dmp/.dmp.gz enviados ao Oracle e o .log que retorna do impdp recebem um sufixo
-    (configurado em config.yaml -> teste.sufixo, ex: "_teste"), para validar o fluxo
-    completo com arquivos claramente identificáveis antes de assumir produção.
-    Depois de validado, basta rodar de novo sem responder "s" aqui (ou sem passar
-    --teste na linha de comando) para usar os nomes de produção normalmente.
-    """
+    """Pergunta se a execução real deve rodar em modo teste (sufixo nos arquivos)."""
     resp = input(
         "Executar em MODO TESTE (sufixo nos arquivos .dmp/.dmp.gz/.log)? [s/N]: "
     ).strip().lower()
@@ -137,12 +122,7 @@ def build_arg_parser(default_config_path: str) -> argparse.ArgumentParser:
 
 
 def parse_args(current_dir: str) -> argparse.Namespace:
-    """
-    Ponto único de resolução dos argumentos de execução:
-      - Se executado sem parâmetros, abre o menu interativo (que preenche sys.argv).
-      - Em seguida, faz o parse via argparse (cobrindo tanto a chamada direta via CLI
-        quanto os argumentos montados pelo menu interativo).
-    """
+    """Abre o menu quando não há argumentos e devolve os argumentos interpretados."""
     if len(sys.argv) == 1:
         _run_interactive_menu()
 

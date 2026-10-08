@@ -7,8 +7,8 @@ def test_regex_reconhece_dump_e_log_e_captura_a_data():
     regex = NAMING.export_regex("VENDAS")
     assert regex.match("EXPORT_VENDAS_PROD_20260902_1.dmp.gz").group(1) == "20260902"
     assert regex.match("EXPORT_VENDAS_PROD_20260902_2.log")
-    assert not regex.match("EXPORT_VENDAS_PROD_20260902_1.dmp")       # só .dmp.gz ou .log na origem
-    assert not regex.match("EXPORT_COMPRAS_PROD_20260902_1.dmp.gz")   # outro sistema
+    assert not regex.match("EXPORT_VENDAS_PROD_20260902_1.dmp")
+    assert not regex.match("EXPORT_COMPRAS_PROD_20260902_1.dmp.gz")
 
 
 def test_globs():
@@ -21,6 +21,6 @@ def test_sufixo_de_teste_respeita_extensao_composta_e_e_idempotente():
     nome = "EXPORT_VENDAS_PROD_20260902_1.dmp.gz"
     com_sufixo = NAMING.apply_test_mode(nome, True)
     assert com_sufixo == "EXPORT_VENDAS_PROD_20260902_1_teste.dmp.gz"
-    assert NAMING.apply_test_mode(com_sufixo, True) == com_sufixo     # não duplica
-    assert NAMING.apply_test_mode(com_sufixo, False) == nome          # volta ao nome de produção
+    assert NAMING.apply_test_mode(com_sufixo, True) == com_sufixo
+    assert NAMING.apply_test_mode(com_sufixo, False) == nome
     assert NAMING.apply_test_mode("impdp_vendas_1.log", True) == "impdp_vendas_1_teste.log"

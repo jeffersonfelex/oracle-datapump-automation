@@ -20,7 +20,7 @@ def test_segundo_acquire_recusado_enquanto_lock_recente(tmp_path):
     lock2 = ExecutionLock(lock_path, stale_after_seconds=3600)
 
     assert lock1.acquire() is True
-    assert lock2.acquire() is False  # execucao anterior ainda "viva"
+    assert lock2.acquire() is False
 
     lock1.release()
 
@@ -31,7 +31,7 @@ def test_lock_e_renovado_periodicamente(tmp_path):
     lock.acquire()
 
     mtime_inicial = os.path.getmtime(lock_path)
-    time.sleep(2.5)  # espera pelo menos uma renovacao (intervalo de 1s)
+    time.sleep(2.5)
     mtime_depois = os.path.getmtime(lock_path)
 
     lock.release()
@@ -44,12 +44,9 @@ def test_lock_velho_e_considerado_abandonado(tmp_path):
     with open(lock_path, "w", encoding="utf-8") as f:
         f.write("12345")
 
-    # Forca o lock a parecer antigo (criado ha mais tempo que o limite de "velho").
     antigo = time.time() - 7200
     os.utime(lock_path, (antigo, antigo))
 
     lock = ExecutionLock(lock_path, stale_after_seconds=3600)
-    # Mesmo com um arquivo de lock presente, por estar "velho" (crash anterior),
-    # uma nova execucao longa nao deve ser bloqueada por ele.
     assert lock.acquire() is True
     lock.release()

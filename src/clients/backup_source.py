@@ -1,8 +1,4 @@
-"""
-Módulo de Integração com o Servidor de Origem dos Backups.
-Gerencia conexão via FTP ou SFTP, download dos 4 arquivos EXPORT por sistema
-e política de retenção (guardar somente os 3 últimos arquivos).
-"""
+"""Cliente FTP/SFTP do servidor de origem dos backups."""
 
 import os
 import ftplib
@@ -109,11 +105,7 @@ class BackupSourceClient:
         return []
 
     def get_system_files(self, sistema: str) -> Tuple[str, List[str]]:
-        """
-        Localiza os 4 arquivos do sistema mais recentes no servidor de origem.
-        Retorna uma tupla: (data_str, lista_arquivos)
-        Exemplo de retorno: ('20260902', ['EXPORT_FRE_PROD_20260902_1.dmp.gz', ...])
-        """
+        """Arquivos do sistema na data de export mais recente: (data, arquivos)."""
         all_files = self.list_files()
         pattern = self.naming.export_regex(sistema)
 
@@ -143,7 +135,7 @@ class BackupSourceClient:
             try:
                 self.ensure_connected()
                 if self.protocol == "ftp" and self.ftp:
-                    self.ftp.voidcmd("TYPE I")  # modo binário, senão SIZE pode falhar/variar
+                    self.ftp.voidcmd("TYPE I")  # SIZE só é confiável em modo binário
                     return self.ftp.size(remote_file)
                 elif self.protocol == "sftp" and self.sftp:
                     return self.sftp.stat(remote_file).st_size
@@ -153,18 +145,11 @@ class BackupSourceClient:
         return None
 
     def get_remote_mtime(self, remote_file: str) -> Optional[datetime]:
-        """
-        Consulta a data de modificação do arquivo no servidor de origem (UTC), sem baixar
-        o conteúdo. Usado pela verificação diária (agendado.py) para saber se um
-        arquivo é novo/foi reenviado, e para esperar ele "assentar" (ver
-        MIN_IDLE_MINUTES) antes de processar - evita pegar um arquivo ainda sendo
-        transferido pela origem.
-        """
+        """Data de modificação do arquivo na origem (UTC), sem baixar o conteúdo."""
         for attempt in range(3):
             try:
                 self.ensure_connected()
                 if self.protocol == "ftp" and self.ftp:
-                    # MDTM retorna "213" + "YYYYMMDDHHMMSS" (UTC) se o servidor suportar.
                     resp = self.ftp.sendcmd(f"MDTM {remote_file}")
                     ts = resp.split()[-1]
                     return datetime.strptime(ts, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
@@ -177,13 +162,7 @@ class BackupSourceClient:
         return None
 
     def download_file(self, remote_file: str, local_path: str):
-        """
-        Baixa um único arquivo do servidor de origem para o disco local com suporte a retry.
-        Após cada tentativa, confere o tamanho do arquivo baixado contra o tamanho
-        real no servidor — um download interrompido/truncado (ex: conexão instável,
-        limite de conexões simultâneas) não fica sem barulho por trás de um arquivo
-        que só parece "presente"; ele é tratado como falha e re-tentado.
-        """
+        """Baixa um arquivo com retry, conferindo o tamanho final contra o do servidor."""
         logger.info(f"  Download: {remote_file} -> {local_path}")
         expected_size = self.get_remote_size(remote_file)
 
@@ -208,7 +187,7 @@ class BackupSourceClient:
                 logger.warning(f"  Falha no download ({attempt+1}/3) de {remote_file}: {e}")
                 try:
                     if os.path.exists(local_path):
-                        os.remove(local_path)  # remove parcial antes de tentar de novo
+                        os.remove(local_path)
                 except Exception:
                     pass
                 self.disconnect()
@@ -216,10 +195,7 @@ class BackupSourceClient:
                     raise
 
     def download_system_files(self, sistema: str, local_dest_dir: str) -> Tuple[str, List[str]]:
-        """
-        Localiza e baixa os 4 arquivos do sistema para a pasta local especificada.
-        Retorna a data detectada e a lista de caminhos locais baixados.
-        """
+        """Baixa os arquivos mais recentes do sistema, pulando os já presentes com o mesmo tamanho."""
         latest_date, remote_files = self.get_system_files(sistema)
         if not remote_files:
             return "", []
@@ -229,9 +205,6 @@ class BackupSourceClient:
 
         for r_file in remote_files:
             l_path = os.path.join(local_dest_dir, r_file)
-            # Só pula o download se o arquivo já existir localmente com o MESMO tamanho
-            # do servidor (não apenas "maior que zero" — isso já deixou passar um
-            # download truncado em silêncio, que ficou sendo reenviado por semanas).
             if os.path.exists(l_path) and os.path.getsize(l_path) > 0:
                 remote_size = self.get_remote_size(r_file)
                 local_size = os.path.getsize(l_path)
@@ -252,10 +225,7 @@ class BackupSourceClient:
         return latest_date, downloaded_paths
 
     def apply_retention(self, sistema: str, keep: int = 3, dry_run: bool = False):
-        """
-        Aplica a política de retenção no servidor de origem:
-        Apaga os arquivos antigos do sistema, guardando somente os 'keep' últimos.
-        """
+        """Apaga da origem as datas de export antigas, mantendo as `keep` mais recentes."""
         all_files = self.list_files()
         pattern = self.naming.export_regex(sistema)
 
@@ -263,7 +233,6 @@ class BackupSourceClient:
         if not system_files:
             return
 
-        # Agrupa arquivos por data para não quebrar conjuntos de export
         files_by_date: Dict[str, List[str]] = {}
         for f in system_files:
             match = pattern.match(f)

@@ -1,7 +1,4 @@
-"""
-Módulo de Configuração de Logs da Automação.
-Gera saída simultânea no console (com cores) e em arquivo de log no diretório configurado.
-"""
+"""Logger com saída colorida no console e gravação em arquivo."""
 
 import os
 import sys
@@ -9,7 +6,6 @@ import logging
 from datetime import datetime
 from colorama import init, Fore, Style
 
-# Inicializa suporte a cores no terminal Windows
 init(autoreset=True)
 
 
@@ -33,9 +29,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 def setup_logger(logs_dir: str, log_level: int = logging.INFO) -> tuple[logging.Logger, str]:
-    """
-    Configura e retorna o logger principal da aplicação e o caminho do arquivo de log.
-    """
+    """Configura o logger da aplicação e devolve (logger, caminho do arquivo de log)."""
     os.makedirs(logs_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(logs_dir, f"atualizacao_{timestamp}.log")
@@ -43,17 +37,14 @@ def setup_logger(logs_dir: str, log_level: int = logging.INFO) -> tuple[logging.
     logger = logging.getLogger("AtualizacaoOracle")
     logger.setLevel(logging.DEBUG)
 
-    # Remove handlers anteriores se existirem
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # Handler de Console
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(ColoredFormatter())
     logger.addHandler(console_handler)
 
-    # Handler de Arquivo
     file_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)-8s] %(message)s",
         datefmt="%H:%M:%S"

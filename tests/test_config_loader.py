@@ -10,7 +10,7 @@ def test_aplica_segredos_do_env_no_config():
     with patch.dict(os.environ, {}, clear=True):
         aplicar_segredos(config, env)
     assert config["origem"]["password"] == "s1"
-    assert config["impdp"]["password"] == "s2"           # chave do .env em minúsculas também vale
+    assert config["impdp"]["password"] == "s2"
     assert config["alertas"]["teams_webhook_url"] == "https://exemplo.invalido/w"
 
 

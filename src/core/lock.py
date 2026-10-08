@@ -1,11 +1,4 @@
-"""
-Módulo de Lock de Execução com Renovação (heartbeat).
-Evita que a execução agendada diária rode em cima de outra já em andamento,
-sem confundir uma execução longa e saudável com um lock travado de um crash
-anterior: uma thread renova o mtime do arquivo de lock periodicamente, e o
-lock só é considerado "velho" (abandonado) se ficar sem renovação por tempo
-bem maior que o intervalo de renovação.
-"""
+"""Lock de execução renovado por heartbeat; sem renovação, é considerado abandonado."""
 
 import os
 import time
@@ -24,11 +17,7 @@ class ExecutionLock:
         self._thread: threading.Thread = None
 
     def acquire(self) -> bool:
-        """
-        Tenta obter o lock. Retorna False se já existe um lock recente (execução
-        em andamento); True se conseguiu (criando/sobrescrevendo o arquivo e
-        iniciando a renovação periódica).
-        """
+        """Obtém o lock; False se outra execução estiver em andamento."""
         if os.path.exists(self.lock_path):
             age = time.time() - os.path.getmtime(self.lock_path)
             if age < self.stale_after_seconds:

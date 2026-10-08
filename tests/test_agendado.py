@@ -1,9 +1,3 @@
-"""
-Testes da verificacao diaria agendada (agendado.py): deteccao de base nova x
-ja processada x modificada ha pouco tempo, escolha do arquivo de referencia,
-falha de uma base nao impedir as outras, e notificacao so quando algo mudou.
-"""
-
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
@@ -16,7 +10,7 @@ from src.core.control_db import ControlDB
 
 AGORA = datetime(2026, 10, 9, 12, 0, tzinfo=timezone.utc)
 
-_SEM_MTIME = object()  # sentinela: distingue "nao informado" de mtime=None explicito
+_SEM_MTIME = object()
 
 
 def _ref(arquivo="a.dmp.gz", tamanho=1000, mtime=_SEM_MTIME):
@@ -24,10 +18,6 @@ def _ref(arquivo="a.dmp.gz", tamanho=1000, mtime=_SEM_MTIME):
         mtime = AGORA - timedelta(hours=2)
     return {"arquivo": arquivo, "tamanho": tamanho, "mtime": mtime}
 
-
-# ---------------------------------------------------------------------------
-# deve_processar(): deteccao de base nova x ja processada x recem-modificada
-# ---------------------------------------------------------------------------
 
 def test_sem_arquivo_na_origem_nao_processa():
     processar, motivo = deve_processar(None, None, AGORA)
@@ -79,10 +69,6 @@ def test_mtime_desconhecido_nao_processa():
     assert motivo == "mtime_desconhecido"
 
 
-# ---------------------------------------------------------------------------
-# _referencia_arquivo(): usa o arquivo mais recente retornado pelo servidor de origem
-# ---------------------------------------------------------------------------
-
 def test_referencia_arquivo_usa_o_primeiro_da_lista_mais_recente():
     origem = MagicMock()
     origem.get_system_files.return_value = ("20261009", ["EXPORT_FRE_PROD_20261009_1.dmp.gz", "EXPORT_FRE_PROD_20261009_2.dmp.gz"])
@@ -102,10 +88,6 @@ def test_referencia_arquivo_none_quando_nao_ha_arquivos():
     assert _referencia_arquivo(origem, "COMERCIAL") is None
 
 
-# ---------------------------------------------------------------------------
-# comando_verificacao_diaria(): integracao com mocks (sem rede/Oracle reais)
-# ---------------------------------------------------------------------------
-
 def _config_duas_bases():
     return {
         "sistemas": {"ativos": ["VENDAS", "FROTA"]},
@@ -122,10 +104,6 @@ def control_db_path(tmp_path, monkeypatch):
 
 
 def test_falha_de_uma_base_nao_impede_a_outra_e_e_registrada(control_db_path):
-    # comando_verificacao_diaria usa datetime.now() real (nao mockado) para
-    # calcular a idade do arquivo - entao as referencias de teste tambem
-    # precisam ser relativas ao "agora" real, nao ao AGORA fixo usado nos
-    # testes de deve_processar() isolados.
     agora_real = datetime.now(timezone.utc)
     ref_vendas = _ref(arquivo="EXPORT_FRE_PROD_20261009_1.dmp.gz", mtime=agora_real - timedelta(hours=2))
     ref_frota = _ref(arquivo="EXPORT_FROTA_PROD_20261009_1.dmp.gz", mtime=agora_real - timedelta(hours=2))
@@ -134,11 +112,9 @@ def test_falha_de_uma_base_nao_impede_a_outra_e_e_registrada(control_db_path):
          patch.object(agendado, "Orchestrator") as MockOrch, \
          patch.object(agendado, "notificar_teams") as mock_notificar, \
          patch.object(agendado, "_referencia_arquivo", side_effect=[ref_vendas, ref_frota]):
-
         MockOrigem.return_value = MagicMock()
 
         orch_instance = MockOrch.return_value
-        # VENDAS da certo, FROTA falha - uma nao deve impedir a outra.
         orch_instance.run.side_effect = [
             {"VENDAS": "SUCESSO"},
             {"FROTA": "ERRO_CRITICO_IMPDP"},
@@ -147,11 +123,11 @@ def test_falha_de_uma_base_nao_impede_a_outra_e_e_registrada(control_db_path):
         with pytest.raises(SystemExit) as exc_info:
             agendado.comando_verificacao_diaria(_config_duas_bases(), {}, MagicMock())
 
-        assert exc_info.value.code == 1  # alguma base falhou
+        assert exc_info.value.code == 1
 
     control = ControlDB(control_db_path)
-    assert control.get_estado("VENDAS") is not None   # sucesso avancou o estado
-    assert control.get_estado("FROTA") is None        # falha NAO avancou o estado
+    assert control.get_estado("VENDAS") is not None
+    assert control.get_estado("FROTA") is None
 
     historico_frota = control.listar_execucoes(base="FROTA")
     assert len(historico_frota) == 1
@@ -169,7 +145,6 @@ def test_sem_mudanca_em_nenhuma_base_nao_notifica(control_db_path):
          patch.object(agendado, "Orchestrator") as MockOrch, \
          patch.object(agendado, "notificar_teams") as mock_notificar, \
          patch.object(agendado, "_referencia_arquivo", return_value=None):
-
         MockOrigem.return_value = MagicMock()
 
         with pytest.raises(SystemExit) as exc_info:
@@ -185,11 +160,10 @@ def test_segunda_execucao_concorrente_sai_com_erro_sem_tentar_nada(control_db_pa
     with patch.object(agendado, "BackupSourceClient") as MockOrigem, \
          patch.object(agendado, "Orchestrator") as MockOrch, \
          patch.object(agendado, "notificar_teams") as mock_notificar:
-
         MockOrigem.return_value = MagicMock()
 
         lock_manual = agendado.ExecutionLock(agendado.LOCK_PATH)
-        assert lock_manual.acquire() is True  # simula uma execucao ja em andamento
+        assert lock_manual.acquire() is True
         try:
             with pytest.raises(SystemExit) as exc_info:
                 agendado.comando_verificacao_diaria(_config_duas_bases(), {}, MagicMock())

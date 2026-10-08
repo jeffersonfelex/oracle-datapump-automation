@@ -30,8 +30,6 @@ def test_falha_de_rede_nao_levanta_excecao():
         "src.support.teams_notifier.urllib.request.urlopen",
         side_effect=urllib.error.URLError("falhou"),
     ):
-        # Nao deve levantar excecao - uma falha de notificacao nunca pode
-        # derrubar a execucao agendada.
         notificar_teams("https://exemplo.invalido/webhook", "titulo", ["linha"])
 
 

@@ -1,9 +1,3 @@
-"""
-Testes do LogAnalyzer - a regra de tolerancia a erro que agendado.py reaproveita
-(em vez de reimplementar uma regra propria) para decidir sucesso x falha de
-cada base.
-"""
-
 from src.core.log_analyzer import LogAnalyzer
 
 
@@ -40,14 +34,11 @@ def test_extra_ignore_vale_so_para_a_chamada():
     analyzer = LogAnalyzer(["ORA-31684"])
     log = "ORA-12345: erro especifico de um sistema"
 
-    # Sem a excecao pontual, e critico.
     is_critical, _, _ = analyzer.analyze_log_content(log)
     assert is_critical is True
 
-    # Com a excecao pontual (ex: so para um sistema), deixa de ser.
     is_critical, _, _ = analyzer.analyze_log_content(log, extra_ignore=["ORA-12345"])
     assert is_critical is False
 
-    # A lista global do analyzer nao foi alterada pela chamada anterior.
     is_critical_de_novo, _, _ = analyzer.analyze_log_content(log)
     assert is_critical_de_novo is True

@@ -1,18 +1,11 @@
-"""
-Módulo de Carregamento da Configuração da Automação.
-Único ponto responsável por ler o config.yaml e aplicar os segredos (senhas,
-webhook) vindos do .env ou de variáveis de ambiente — segredos nunca ficam no YAML.
-"""
+"""Leitura do config.yaml e injeção dos segredos vindos do .env ou do ambiente."""
 
 import os
 import yaml
 
 
 def load_config(config_path: str) -> dict:
-    """
-    Carrega o arquivo YAML de configuração.
-    Lança FileNotFoundError se o caminho informado não existir.
-    """
+    """Carrega o YAML de configuração."""
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Arquivo de configuração não encontrado: {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
@@ -20,12 +13,7 @@ def load_config(config_path: str) -> dict:
 
 
 def load_env(env_path: str) -> dict:
-    """
-    Carrega variáveis no formato CHAVE=valor de um arquivo .env (ex: segredos
-    como teams_webhook_url, que não devem ir para o config.yaml versionável).
-    Retorna {} se o arquivo não existir - .env é opcional. Não usa nenhuma
-    biblioteca externa (sem dependência nova só para isso).
-    """
+    """Lê um arquivo .env (CHAVE=valor); devolve {} se ele não existir."""
     env = {}
     if not os.path.exists(env_path):
         return env
@@ -39,7 +27,6 @@ def load_env(env_path: str) -> dict:
     return env
 
 
-# variável de ambiente / chave do .env  ->  (seção do config.yaml, chave)
 SEGREDOS = {
     "ORIGEM_USER": ("origem", "user"),
     "ORIGEM_PASSWORD": ("origem", "password"),
@@ -52,11 +39,7 @@ SEGREDOS = {
 
 
 def aplicar_segredos(config: dict, env: dict) -> dict:
-    """
-    Injeta no config os segredos definidos no .env (`env`) ou em variáveis de
-    ambiente do sistema (que têm prioridade). Chaves do .env aceitam maiúsculas
-    ou minúsculas (ex: TEAMS_WEBHOOK_URL ou teams_webhook_url).
-    """
+    """Injeta no config os segredos do .env; variáveis de ambiente têm prioridade."""
     env_normalizado = {k.upper(): v for k, v in env.items()}
     for variavel, (secao, chave) in SEGREDOS.items():
         valor = os.environ.get(variavel) or env_normalizado.get(variavel)

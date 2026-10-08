@@ -19,7 +19,6 @@ echo.
 
 set /p OPCAO="Digite a opcao desejada [1-5]: "
 
-rem Modo teste: pergunta apenas para execucoes reais (nao dry-run, nao sair).
 set TESTEFLAG=
 if not "%OPCAO%"=="1" if not "%OPCAO%"=="5" (
     set /p MODOTESTE="Executar em MODO TESTE (sufixo nos arquivos .dmp/.dmp.gz/.log)? [s/N]: "

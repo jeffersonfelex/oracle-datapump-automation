@@ -1,21 +1,4 @@
-"""
-Ponto de Entrada da Verificação Diária Agendada.
-
-Diferente de main.py (execução manual, escolhida pelo operador), este script
-roda sozinho todo dia (Agendador de Tarefas do Windows, 02:00) e decide por
-conta própria quais sistemas processar: só os que têm um arquivo novo/alterado
-no servidor de origem desde a última vez que foram importados com sucesso.
-
-Uso:
-  py agendado.py              # verificação diária normal
-  py agendado.py --seed       # mostra o estado atual no servidor de origem (não grava nada)
-  py agendado.py --seed --confirmar   # grava esse estado como ponto de partida
-
-O "ponto de partida" existe para a primeira execução não acionar uma recarga
-completa de todos os sistemas (o banco de controle começa vazio, e sem isso
-TUDO pareceria "novo"). Só grava com --confirmar, depois de você validar que
-as versões mostradas já estão carregadas no banco de destino.
-"""
+"""Verificação diária agendada: processa só os sistemas com export novo ou alterado na origem."""
 
 import os
 import sys
@@ -41,12 +24,7 @@ LOCK_PATH = os.path.join(CURRENT_DIR, "controle", "agendado.lock")
 
 
 def deve_processar(estado, ref, agora, min_idle_minutes: int = MIN_IDLE_MINUTES):
-    """
-    Decide se uma base deve ser processada nesta rodada, a partir do estado
-    gravado (ou None, se nunca processada) e da referência atual no servidor de origem
-    (ou None, se não há arquivo). Função pura (sem rede/IO) para ser testável
-    diretamente. Retorna (deve_processar: bool, motivo: str).
-    """
+    """Decide se a base deve ser processada nesta rodada. Retorna (processar, motivo)."""
     if ref is None:
         return False, "sem_arquivo"
     if ref["mtime"] is None:
@@ -68,11 +46,7 @@ def deve_processar(estado, ref, agora, min_idle_minutes: int = MIN_IDLE_MINUTES)
 
 
 def _referencia_arquivo(origem: BackupSourceClient, sistema: str):
-    """
-    Identifica o arquivo de referência (o mais recente) de um sistema no
-    servidor de origem e seu tamanho/data de modificação. Retorna None se não houver
-    nenhum arquivo para o sistema.
-    """
+    """Arquivo mais recente do sistema na origem, com tamanho e data de modificação."""
     _, arquivos = origem.get_system_files(sistema)
     if not arquivos:
         return None
@@ -125,8 +99,6 @@ def comando_seed(config: dict, confirmar: bool):
 
 
 def comando_verificacao_diaria(config: dict, env: dict, logger):
-    # Injeta o webhook em alertas, para o Notifier avisar no Teams imediatamente
-    # a cada falha crítica de impdp, além do resumo final enviado no fim desta função.
     webhook = env.get("teams_webhook_url") or config.get("alertas", {}).get("teams_webhook_url")
     if webhook:
         config.setdefault("alertas", {})["teams_webhook_url"] = webhook

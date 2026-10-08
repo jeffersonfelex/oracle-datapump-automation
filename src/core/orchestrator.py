@@ -1,7 +1,4 @@
-"""
-Módulo Orquestrador da Automação.
-Coordena todo o fluxo de atualização das bases Oracle para os sistemas corporativos.
-"""
+"""Coordena as 8 etapas da atualização para cada sistema."""
 
 import os
 import re
@@ -44,9 +41,7 @@ class Orchestrator:
         from_sistema: Optional[str] = None,
         teste: bool = False
     ) -> Dict[str, str]:
-        """
-        Executa o pipeline completo para a lista de sistemas fornecida.
-        """
+        """Executa o pipeline para os sistemas e devolve {sistema: status}."""
         target_sistemas = list(sistemas or self.sistemas_list)
         if from_sistema:
             from_upper = from_sistema.upper()
@@ -69,11 +64,9 @@ class Orchestrator:
             logger.info(f"  Modo Teste           : DESATIVO (nomes de produção)")
         logger.info("=" * 70)
 
-        # 1. Conexão ao servidor Oracle
         try:
             if not dry_run:
                 self.oracle_client.connect()
-                # Verifica espaço inicial em disco e limpa RMAN se necessário
                 self.oracle_client.check_disk_space()
                 self.oracle_client.clean_old_rman_if_needed(dry_run=dry_run)
             else:
@@ -82,7 +75,6 @@ class Orchestrator:
             logger.critical(f"Falha ao conectar no servidor Oracle: {e}")
             return {sys: f"ERRO_CONEXAO_ORACLE: {e}" for sys in target_sistemas}
 
-        # 2. Conexão ao servidor de origem (se não for pulado)
         if not skip_origem and not dry_run:
             try:
                 self.origem_client.connect()
@@ -91,7 +83,6 @@ class Orchestrator:
                 self.oracle_client.disconnect()
                 return {sys: f"ERRO_CONEXAO_ORIGEM: {e}" for sys in target_sistemas}
 
-        # 3. Processamento de cada sistema corporativo
         try:
             for sistema in target_sistemas:
                 logger.info("\n" + "=" * 70)
@@ -108,13 +99,11 @@ class Orchestrator:
                 results[sistema] = status
 
         finally:
-            # 4. Desconexões finais
             if not skip_origem and not dry_run:
                 self.origem_client.disconnect()
             if not dry_run:
                 self.oracle_client.disconnect()
 
-        # 5. Relatório Resumido
         self._print_summary(results)
         return results
 
@@ -126,15 +115,9 @@ class Orchestrator:
         periodo_override: Optional[str],
         teste: bool = False
     ) -> str:
-        """
-        Executa as 8 etapas para um único sistema corporativo.
-        """
-        # Define diretório local do sistema
+        """Executa as 8 etapas para um sistema e devolve o status."""
         sys_dir = os.path.join(self.local_base_dir, sistema)
 
-        # ----------------------------------------------------------------------
-        # ETAPA 1: Download ou Identificação dos 4 arquivos EXPORT
-        # ----------------------------------------------------------------------
         export_date = ""
         local_files = []
         periodo = periodo_override or datetime.now().strftime("%Y-%m")
@@ -142,11 +125,9 @@ class Orchestrator:
         if not skip_origem and not dry_run:
             logger.info(f"[{sistema}] [1/8] Baixando arquivos do servidor de origem...")
             try:
-                # Primeiro identifica a data mais recente no servidor de origem
                 date_found, _ = self.origem_client.get_system_files(sistema)
                 if date_found:
                     export_date = date_found
-                    # Formata ANO-MÊS com base na data do arquivo (ex: 20260902 -> 2026-09)
                     periodo = f"{export_date[:4]}-{export_date[4:6]}"
 
                 dest_dir = os.path.join(sys_dir, periodo)
@@ -159,7 +140,6 @@ class Orchestrator:
                 logger.error(f"[{sistema}] Falha ao baixar arquivos do servidor de origem: {e}")
                 return f"ERRO_DOWNLOAD: {e}"
         else:
-            # Identificação local
             logger.info(f"[{sistema}] [1/8] Verificando arquivos locais na pasta {sys_dir}...")
             dest_dir = os.path.join(sys_dir, periodo)
             if not os.path.exists(dest_dir):
@@ -180,14 +160,12 @@ class Orchestrator:
                     return "ERRO_ARQUIVOS_LOCAIS_NAO_ENCONTRADOS"
 
             local_files = gz_files
-            # Extrai a data do primeiro arquivo encontrado
             match = re.search(r"_(\d{8})_\d+\.dmp\.gz$", gz_files[0])
             if match:
                 export_date = match.group(1)
 
         logger.info(f"[{sistema}] Período: {periodo} | Data dos exports: {export_date}")
 
-        # Filtra e combina todos os arquivos .dmp.gz da data identificada (remotos baixados + já existentes localmente)
         local_gz_pattern = os.path.join(dest_dir, self.naming.export_glob(sistema, export_date))
         found_gz_files = glob.glob(local_gz_pattern)
         combined_gz = set([f for f in local_files if f.endswith(".dmp.gz")] + found_gz_files)
@@ -200,9 +178,6 @@ class Orchestrator:
             logger.info(f"[{sistema}] [DRY-RUN] Simulação das etapas 2 a 8 para {sistema}.")
             return "SUCESSO_SIMULADO"
 
-        # ----------------------------------------------------------------------
-        # ETAPA 2: Atualização dos Parfiles no Servidor Oracle
-        # ----------------------------------------------------------------------
         logger.info(f"[{sistema}] [2/8] Atualizando parfiles no Oracle...")
         par_manager = ParfileManager(self.oracle_client.sftp, self.config["oracle"]["import_dir"], self.naming)
         parfiles = par_manager.get_parfiles_for_system(sistema)
@@ -221,31 +196,19 @@ class Orchestrator:
             parfile_logs[pf] = expected_log
             parfile_dumps[pf] = expected_dump
 
-        # ----------------------------------------------------------------------
-        # ETAPAS 3 a 6: Upload + Descompactação + impdp + Análise, arquivo por
-        # arquivo (não mais "descompacta tudo, depois importa tudo"). Sistemas
-        # grandes e multi-arquivo (ex: FINANCEIRO, CONTRATOS, RH) já esgotaram o espaço em
-        # /backup ("No space left on device") quando os 2 dumps descompactados
-        # precisavam caber no disco ao mesmo tempo. Processando um de cada vez e
-        # apagando o .dmp assim que o SEU impdp termina com sucesso, só é preciso
-        # espaço para o maior arquivo individual, não para a soma de todos.
-        # ----------------------------------------------------------------------
         logger.info(f"[{sistema}] [3/8 a 6/8] Preparando, importando e limpando cada arquivo...")
         sistema_lower = sistema.lower()
         has_any_critical_error = False
         executed_logs = []
 
-        # Exceções de ORA- válidas SOMENTE para este sistema (config.yaml ->
-        # alertas.ignorar_ora_erros_por_sistema). Não afeta os demais sistemas.
         extra_ignore_ora = self.config.get("alertas", {}).get("ignorar_ora_erros_por_sistema", {}).get(sistema, [])
         if extra_ignore_ora:
             logger.warning(f"[{sistema}] Exceção temporária ativa só para este sistema: {extra_ignore_ora} (ver comentário no config.yaml)")
 
+        # Um arquivo por vez (upload, gunzip, impdp, apaga o .dmp): o disco só precisa comportar o maior dump.
         for pf in parfiles:
             expected_dump = parfile_dumps.get(pf)
 
-            # Localiza o .dmp.gz local correspondente a este parfile específico
-            # (mesmo nome de arquivo esperado, com ou sem sufixo de teste).
             local_gz = None
             if expected_dump:
                 for gz in dmp_gz_files:
@@ -275,8 +238,6 @@ class Orchestrator:
                 remote_gz_path = f"{self.config['oracle']['import_dir']}/{filename_gz}"
                 local_gz_size = os.path.getsize(local_gz)
 
-                # Evita reenviar o .gz (pode passar de 20 GB) se uma tentativa
-                # anterior já deixou ele lá, íntegro, do jeito certo.
                 gz_already_uploaded = False
                 try:
                     st_gz = self.oracle_client.sftp.stat(remote_gz_path)
@@ -304,17 +265,14 @@ class Orchestrator:
                 timeout=self.impdp_timeout
             )
 
-            # Identifica o nome do arquivo de log
             expected_log = parfile_logs.get(pf)
             if not expected_log:
-                # Tenta inferir nome padrão se não veio no parfile
                 pf_suffix = pf.split('_')[-1].replace('.par', '')
                 expected_log = f"{self.naming.log_prefix}_{sistema_lower}_{export_date}_{pf_suffix}.log"
                 expected_log = self.naming.apply_test_mode(expected_log, teste)
 
             executed_logs.append(expected_log)
 
-            # Baixa e inspeciona o log no Oracle
             logger.info(f"[{sistema}] Inspecionando log gerado: {expected_log}")
             local_log_temp = os.path.join(dest_dir, expected_log)
             pf_critical = False
@@ -325,7 +283,7 @@ class Orchestrator:
 
                 is_critical, critical_errs, ignored_errs = self.log_analyzer.analyze_log_content(log_text, extra_ignore=extra_ignore_ora)
 
-                # No Oracle Data Pump: exit code 0 = EX_SUCC, exit code 5 = EX_WARN (sucesso com avisos não-fatais)
+                # impdp: 0 = sucesso, 5 = sucesso com avisos (EX_WARN)
                 if exit_code == 5 and not is_critical:
                     logger.info(f"[{sistema}] impdp concluído com avisos não-críticos (código 5 - EX_WARN). Considerado SUCESSO.")
 
@@ -339,11 +297,6 @@ class Orchestrator:
                         log_path=local_log_temp
                     )
                 elif ignored_errs:
-                    # Erro tolerado (ex: ORA-01918/ORA-00942 por schema de origem não
-                    # mapeado) não barra a importação, mas pode indicar um objeto
-                    # inteiro ficando de fora silenciosamente (como aconteceu com
-                    # uma tabela de OUTRO_SCHEMA num dos sistemas) - avisa mesmo assim,
-                    # para alguém revisar e decidir se precisa de um remap_schema.
                     self.notifier.notify_tolerated_warnings(
                         sistema=sistema,
                         etapa=f"impdp ({pf})",
@@ -355,16 +308,9 @@ class Orchestrator:
                 pf_critical = True
                 has_any_critical_error = True
 
-            # Libera espaço em disco imediatamente: se este arquivo importou com
-            # sucesso, seu .dmp não é mais necessário. Não espera os demais
-            # arquivos do sistema terminarem (ao contrário do log, que só é
-            # limpo no fim, na ETAPA 7 - logs são pequenos, não pressionam disco).
             if not pf_critical and expected_dump:
                 self.oracle_client.cleanup_files([expected_dump])
 
-        # ----------------------------------------------------------------------
-        # ETAPA 7: Decisão e Limpeza no Oracle
-        # ----------------------------------------------------------------------
         logger.info(f"[{sistema}] [7/8] Gerenciando arquivos e limpeza no Oracle...")
 
         if has_any_critical_error:
@@ -375,15 +321,10 @@ class Orchestrator:
             )
             return "ERRO_CRITICO_IMPDP"
 
-        # Se não houve erro relevante: copia já ocorreu na etapa anterior (download do log para D:\...),
-        # então apaga tanto os dumps quanto os logs do impdp no servidor Oracle.
         dump_cleanup_patterns = [self.naming.export_cleanup_glob(sistema, export_date)]
         log_cleanup_patterns = [self.naming.impdp_log_glob(sistema)]
         self.oracle_client.cleanup_files(dump_cleanup_patterns + log_cleanup_patterns)
 
-        # ----------------------------------------------------------------------
-        # ETAPA 8: Política de Retenção no servidor de origem
-        # ----------------------------------------------------------------------
         if not skip_origem:
             logger.info(f"[{sistema}] [8/8] Aplicando política de retenção no servidor de origem (guardar 3 últimos)...")
             try:

@@ -1,7 +1,4 @@
-"""
-Módulo de Comunicação SSH e SFTP com o Servidor Oracle (oracle-db.example.internal).
-Gerencia execução remota de comandos (gunzip, impdp, df -h) e transferência de arquivos.
-"""
+"""Cliente SSH/SFTP do servidor Oracle: upload, gunzip, impdp e limpeza."""
 
 import os
 import logging
@@ -59,10 +56,7 @@ class OracleSSHClient:
         logger.debug("Conexão encerrada: Oracle")
 
     def execute_command(self, command: str, cwd: Optional[str] = None, timeout: int = 3600) -> Tuple[int, str]:
-        """
-        Executa um comando no servidor Oracle via SSH.
-        Captura saída e código de retorno.
-        """
+        """Executa um comando remoto e devolve (exit_code, saída)."""
         if not self.ssh:
             raise RuntimeError("Sessão SSH não conectada.")
 
@@ -71,7 +65,6 @@ class OracleSSHClient:
         logger.debug(f"SSH Exec: {full_cmd}")
 
         stdin, stdout, stderr = self.ssh.exec_command(full_cmd, timeout=timeout)
-        # Opcional: define timeout para leitura do canal
         stdout.channel.settimeout(timeout)
 
         output_lines = []
@@ -98,14 +91,10 @@ class OracleSSHClient:
         return {"output": output, "exit_code": str(exit_code)}
 
     def clean_old_rman_if_needed(self, dry_run: bool = False):
-        """
-        Se o espaço livre em import_dir ficar abaixo de min_disk_free_gb, remove a pasta
-        mais antiga de backups RMAN (rman_dir) para liberar espaço antes da importação.
-        """
+        """Remove a pasta RMAN mais antiga se o espaço livre ficar abaixo do mínimo."""
         exit_code, output = self.execute_command(f"df -BG {self.import_dir} | tail -1")
         try:
             parts = output.split()
-            # Ex: /dev/mapper/vg_backup-lv_backup 149G 34M 149G 1% /backup
             avail_gb = float(parts[3].replace("G", ""))
             logger.info(f"Espaço disponível em {self.import_dir}: {avail_gb:.1f} GB")
 
@@ -122,14 +111,7 @@ class OracleSSHClient:
             logger.error(f"Não foi possível calcular espaço ou limpar RMAN: {e}")
 
     def upload_file(self, local_path: str, remote_filename: str):
-        """
-        Envia um arquivo local para a pasta /backup/import/ no Oracle.
-        Confere o tamanho remoto contra o local após o envio e tenta de novo (até
-        3x) se não bater - um upload truncado (ex: disco do Oracle ficou cheio no
-        meio da transferência, sob concorrência de outros sistemas) já produziu
-        um .gz corrompido que passou batido por dias (gzip -l reportava tamanho
-        descompactado impossível/negativo) até ser detectado manualmente.
-        """
+        """Envia o arquivo e confere o tamanho remoto, tentando até 3 vezes."""
         if not self.sftp:
             raise RuntimeError("SFTP não conectado.")
 
@@ -165,9 +147,7 @@ class OracleSSHClient:
         self.sftp.get(remote_path, local_path)
 
     def gunzip_file(self, filename_gz: str) -> bool:
-        """
-        Descompacta o arquivo .dmp.gz na pasta /backup/import/.
-        """
+        """Descompacta o .dmp.gz no diretório de import."""
         logger.info(f"  Descompactando via SSH: gunzip -f {filename_gz}")
         exit_code, output = self.execute_command(f"gunzip -f {filename_gz}", cwd=self.import_dir)
         if exit_code == 0:
@@ -178,10 +158,7 @@ class OracleSSHClient:
             return False
 
     def run_impdp(self, conn_str: str, parfile_relative_path: str, timeout: int = 7200) -> Tuple[int, str]:
-        """
-        Executa o Data Pump impdp no servidor Oracle.
-        Comando: impdp system/<senha>@ORCLPDB parfile=/backup/import/<sistema>/parfile_<sistema>_X.par
-        """
+        """Executa o impdp com o parfile informado."""
         full_parfile = f"{self.import_dir}/{parfile_relative_path}" if not parfile_relative_path.startswith("/") else parfile_relative_path
         cmd = f"impdp '{conn_str}' parfile='{full_parfile}'"
 

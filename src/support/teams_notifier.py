@@ -1,8 +1,4 @@
-"""
-Módulo de Notificação via Teams (Adaptive Card por webhook).
-Usa só a biblioteca padrão (urllib) - sem dependência nova. Uma falha de envio
-nunca derruba a execução agendada: só é registrada como aviso no log.
-"""
+"""Envio de Adaptive Card para um webhook do Teams."""
 
 import json
 import logging
@@ -16,11 +12,7 @@ TIMEOUT_SECONDS = 30
 
 
 def notificar_teams(webhook_url: Optional[str], titulo: str, linhas: List[str]) -> None:
-    """
-    Envia um Adaptive Card para o webhook do Teams com o título e uma linha por
-    item de `linhas`. Sem URL configurada, não faz nada (silenciosamente).
-    A URL nunca é incluída em nenhuma mensagem de log, mesmo em caso de erro.
-    """
+    """Envia o cartão; sem URL não faz nada. Falhas viram aviso no log, sem expor a URL."""
     if not webhook_url:
         logger.debug("Notificação Teams não enviada: teams_webhook_url não configurada.")
         return
@@ -53,6 +45,4 @@ def notificar_teams(webhook_url: Optional[str], titulo: str, linhas: List[str]) 
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
             logger.info(f"Notificação enviada ao Teams (status HTTP {resp.status}).")
     except Exception as e:
-        # Propositalmente não loga str(e) na íntegra: alguns erros de rede podem
-        # ecoar a URL da requisição, e ela contém uma chave de acesso.
         logger.warning(f"Falha ao enviar notificação ao Teams (ignorada): {type(e).__name__}")

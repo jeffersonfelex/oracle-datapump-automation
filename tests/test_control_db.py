@@ -42,8 +42,6 @@ def test_erro_nao_grava_estado(control):
         mtime_origem=mtime, inicio=inicio, fim=fim, status="erro", mensagem="ERRO_CRITICO_IMPDP",
     )
 
-    # Falha nao avanca o estado - a base continua "nunca processada com sucesso",
-    # entao a proxima rodada tenta de novo com os mesmos dados de origem.
     assert control.get_estado("VENDAS") is None
     historico = control.listar_execucoes(base="VENDAS")
     assert len(historico) == 1
@@ -68,7 +66,6 @@ def test_sucesso_subsequente_atualiza_estado(control):
     assert estado["arquivo"] == "a2.dmp.gz"
     assert estado["tamanho_origem"] == 2000
 
-    # As duas execucoes ficam no historico, uma linha nao sobrescreve a outra.
     assert len(control.listar_execucoes(base="VENDAS")) == 2
 
 
@@ -93,4 +90,4 @@ def test_bases_independentes(control):
     )
 
     assert control.get_estado("VENDAS") is not None
-    assert control.get_estado("FROTA") is None  # falha de uma base nao contamina a outra
+    assert control.get_estado("FROTA") is None
