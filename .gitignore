@@ -1,0 +1,33 @@
+# Ambiente virtual Python (recriar com: python -m venv .venv && pip install -r requirements.txt)
+.venv/
+venv/
+env/
+
+# Bytecode e cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Build
+build/
+dist/
+*.spec
+*.exe
+
+# Dados e logs gerados em tempo de execução
+data/
+*.log
+logs/
+*.dmp
+*.dmp.gz
+
+# Estado da execução agendada (SQLite de controle e lock)
+controle/
+
+# Segredos - nunca versionar
+.env
+
+# IDE/OS
+.vscode/
+.idea/
+Thumbs.db

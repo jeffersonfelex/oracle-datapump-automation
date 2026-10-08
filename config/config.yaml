@@ -1,0 +1,80 @@
+# ==============================================================================
+# CONFIGURAÇÃO DA AUTOMAÇÃO DE ATUALIZAÇÃO DAS BASES ORACLE
+#
+# Os valores abaixo são EXEMPLOS. Senhas, usuários e o webhook do Teams NÃO
+# ficam neste arquivo: são lidos do .env (ver .env.example) ou de variáveis de
+# ambiente — veja src/config_loader.py (SEGREDOS).
+# ==============================================================================
+
+local:
+  # Diretório base local onde ficam as pastas de cada sistema (<base_dir>/<SISTEMA>/<AAAA-MM>)
+  base_dir: "data"
+  logs_dir: "data/logs"
+
+origem:
+  # Servidor de origem dos backups (onde os exports .dmp.gz são publicados)
+  host: "backup.example.com"
+  port: 21
+  protocol: "ftp"                # "ftp" ou "sftp"
+  remote_dir: "/backups/export"
+  retention_count: 3             # Quantidade de datas de export mais recentes a manter na origem
+  filename_prefix: "EXPORT"      # Prefixo dos arquivos, ex: EXPORT_VENDAS_PROD_20260902_1.dmp.gz
+  filename_infix: "PROD"         # Infixo entre a sigla do sistema e a data
+  # user / password -> ORIGEM_USER / ORIGEM_PASSWORD no .env
+
+oracle:
+  # Servidor Oracle de destino (SSH e SFTP)
+  host: "oracle-db.example.internal"
+  port: 22
+  import_dir: "/backup/import"
+  rman_dir: "/backup/rman"
+  min_disk_free_gb: 15           # Espaço mínimo livre antes de acionar limpeza de RMAN
+  # user / password -> ORACLE_SSH_USER / ORACLE_SSH_PASSWORD no .env
+
+impdp:
+  # Parâmetros de importação Oracle Data Pump
+  # Comando gerado: impdp <user>/<password>@<tns> parfile=<import_dir>/<sistema>/parfile_<sistema>_N.par
+  tns: "ORCLPDB"
+  timeout_seconds: 18000         # 5 horas (bases grandes)
+  log_prefix: "impdp"            # Prefixo dos logs gerados pelo impdp, ex: impdp_vendas_....log
+  # user / password -> IMPDP_USER / IMPDP_PASSWORD no .env
+
+sistemas:
+  # Siglas dos sistemas a processar, na ordem de execução (exemplos fictícios)
+  ativos:
+    - "VENDAS"
+    - "COMPRAS"
+    - "ESTOQUE"
+    - "FINANCEIRO"
+    - "RH"
+    - "LOGISTICA"
+
+teste:
+  # Sufixo inserido nos arquivos .dmp/.dmp.gz enviados ao Oracle e no .log gerado
+  # pelo impdp, SOMENTE quando a automação roda com --teste. Serve para validar o
+  # fluxo completo (upload, gunzip, impdp, download do log) com arquivos claramente
+  # identificáveis antes de assumir produção. Sem --teste, a automação usa (e
+  # garante, removendo sobras) os nomes de produção.
+  sufixo: "_teste"
+
+alertas:
+  responsavel: "equipe de DBA"
+  # Códigos que NÃO barram a importação (erros conhecidos e benignos num ambiente
+  # de cópia, onde usuários/roles de produção não existem).
+  ignorar_ora_erros:
+    - "ORA-31684"  # Objeto já existe
+    - "ORA-39111"  # Objeto dependente já existe e foi ignorado
+    - "ORA-39146"  # Schema não existe no remap_schema
+    - "ORA-01917"  # Usuário ou papel não existe (grants de produção)
+    - "ORA-01918"  # Usuário não existe (grants de produção)
+    - "ORA-01919"  # Role não existe (grants de produção)
+    - "ORA-02380"  # Profile não existe (grants de produção)
+    - "ORA-00942"  # Tabela ou view não existe (dependências entre schemas)
+    # Também é possível tolerar um trecho ESPECÍFICO de mensagem, em vez do código
+    # inteiro - só é ignorado quando aquele texto aparece na linha, sem mascarar o
+    # mesmo código em outra coluna/tabela. Exemplo:
+    # - 'ORA-12899: value too large for column "COLUNA_EXEMPLO"'
+
+  # Exceções válidas SOMENTE para o sistema indicado (não afetam os demais).
+  # Ex.: { "ESTOQUE": ["ORA-02000"] }
+  ignorar_ora_erros_por_sistema: {}
